@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MongoDB.Driver;
+using Prometheus;
 using Serilog;
 using StackExchange.Redis;
 using System.Text;
@@ -212,6 +213,10 @@ if (!app.Environment.IsProduction())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ── Prometheus metrics ─────────────────────────────────────────────
+app.UseHttpMetrics();
+app.MapMetrics();
 
 app.MapGet("/health", () => Results.Ok(new
 {

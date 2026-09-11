@@ -8,6 +8,7 @@
     <ProjectReference Include="..\FCG.CatalogAPI.Application\FCG.CatalogAPI.Application.csproj" />
     <ProjectReference Include="..\FCG.CatalogAPI.Infrastructure\FCG.CatalogAPI.Infrastructure.csproj" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.2.5" />
+    <PackageReference Include="prometheus-net.AspNetCore" Version="8.2.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.8" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
     <PackageReference Include="Serilog.AspNetCore" Version="8.0.2" />
