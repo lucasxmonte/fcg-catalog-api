@@ -1,9 +1,12 @@
+using FCG.CatalogAPI.Application.Avaliacoes;
 using FCG.CatalogAPI.Application.Biblioteca.Commands;
 using FCG.CatalogAPI.Application.Comum.Interfaces;
 using FCG.CatalogAPI.Application.Loja.Commands;
 using FCG.CatalogAPI.Application.Loja.Queries;
 using FCG.CatalogAPI.API.Endpoints;
 using FCG.CatalogAPI.API.Middlewares;
+using FCG.CatalogAPI.Application.Comum.Cache;
+using FCG.CatalogAPI.Infrastructure.Cache;
 using FCG.CatalogAPI.Infrastructure.Mensageria;
 using FCG.CatalogAPI.Infrastructure.Persistencia;
 using MassTransit;
@@ -11,7 +14,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using MongoDB.Driver;
 using Serilog;
+using StackExchange.Redis;
 using System.Text;
 
 // Em Testing, NÃO inicializa o Serilog bootstrap logger nem o UseSerilog.
@@ -42,7 +47,6 @@ if (!isTestEnv)
 }
 
 // ── EF Core — usa InMemory se o ambiente for "Testing" OU se UseInMemoryDatabase=true no config
-// (duplo check: garante InMemory mesmo se appsettings.Testing.json não for carregado a tempo)
 var useInMemory = builder.Environment.IsEnvironment("Testing")
                || builder.Configuration.GetValue<bool>("UseInMemoryDatabase");
 
@@ -53,6 +57,31 @@ else
     builder.Services.AddDbContext<CatalogDbContext>(opt =>
         opt.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 builder.Services.AddScoped<ICatalogDbContext>(p => p.GetRequiredService<CatalogDbContext>());
+
+// ── Redis ─────────────────────────────────────────────────────────
+if (useInMemory)
+{
+    // Ambiente de testes: usa cache no-op para não precisar de Redis
+    builder.Services.AddSingleton<ICacheService, NullCacheService>();
+}
+else
+{
+    var redisConnection = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+    builder.Services.AddSingleton<IConnectionMultiplexer>(
+        ConnectionMultiplexer.Connect(redisConnection));
+    builder.Services.AddSingleton<ICacheService, RedisCacheService>();
+}
+
+// ── MongoDB ───────────────────────────────────────────────────────
+if (!useInMemory)
+{
+    var mongoConnStr = builder.Configuration["MongoDB:ConnectionString"] ?? "mongodb://localhost:27017";
+    var mongoDbName = builder.Configuration["MongoDB:DatabaseName"] ?? "fcg_reviews";
+    builder.Services.AddSingleton<IMongoClient>(new MongoClient(mongoConnStr));
+    builder.Services.AddSingleton<IMongoDatabase>(sp =>
+        sp.GetRequiredService<IMongoClient>().GetDatabase(mongoDbName));
+    builder.Services.AddSingleton<IAvaliacaoRepository, MongoAvaliacaoRepository>();
+}
 
 // ── Application Handlers ───────────────────────────────────────────
 builder.Services.AddScoped<CriarJogoHandler>();
@@ -70,6 +99,14 @@ builder.Services.AddScoped<CriarPromocaoHandler>();
 builder.Services.AddScoped<AtualizarPromocaoHandler>();
 builder.Services.AddScoped<EncerrarPromocaoHandler>();
 builder.Services.AddScoped<ListarPromocoesHandler>();
+
+// Avaliações (MongoDB — só registra fora do ambiente de testes)
+if (!useInMemory)
+{
+    builder.Services.AddScoped<AvaliarJogoHandler>();
+    builder.Services.AddScoped<ListarAvaliacoesHandler>();
+    builder.Services.AddScoped<RemoverAvaliacaoHandler>();
+}
 
 // ── MassTransit + RabbitMQ ─────────────────────────────────────────
 builder.Services.AddScoped<IEventBus, MassTransitEventBus>();
@@ -126,9 +163,13 @@ builder.Services.AddSwaggerGen(c =>
         Title = "FCG Catalog API",
         Version = "v1",
         Description =
-            "API de catálogo da plataforma FCG. Gerencia jogos, promoções e biblioteca pessoal dos usuários.\n\n" +
+            "API de catálogo da plataforma FCG. Gerencia jogos, promoções, biblioteca pessoal e avaliações.\n\n" +
             "### Autenticação\n" +
             "Obtenha um token JWT em `POST /api/auth/login` na **Users API** e inclua-o no cabeçalho `Authorization: Bearer {token}`.\n\n" +
+            "### Novidades Fase 3\n" +
+            "- `GET /api/jogos` agora retorna com **cache Redis** (TTL 5 min)\n" +
+            "- `GET /api/jogos/{id}/avaliacoes` — avaliações via **MongoDB**\n" +
+            "- `POST /api/jogos/{id}/avaliacoes` — cria/atualiza avaliação (autenticado)\n\n" +
             "### Resposta de erro padrão\n" +
             "Todos os erros retornam o schema `ErroResponse` com o campo `erro` descrevendo o problema."
     });
@@ -149,7 +190,6 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
-    // Garante que ErroResponse apareça no schema global
     c.UseAllOfToExtendReferenceSchemas();
 });
 
@@ -165,7 +205,7 @@ if (!app.Environment.IsProduction())
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "FCG Catalog API v1");
         c.DocumentTitle = "FCG Catalog API";
-        c.DefaultModelsExpandDepth(2);   // expande schemas de erro por padrão
+        c.DefaultModelsExpandDepth(2);
         c.DisplayRequestDuration();
     });
 }
@@ -184,8 +224,10 @@ app.MapJogosEndpoints();
 app.MapBibliotecaEndpoints();
 app.MapPromocoesEndpoints();
 
-// ── Migrations automáticas — só executa quando o banco é relacional (Postgres).
-// InMemory retorna IsRelational() == false, portanto é ignorado aqui.
+if (!useInMemory)
+    app.MapAvaliacoesEndpoints();
+
+// ── Migrations automáticas ─────────────────────────────────────────
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
@@ -193,14 +235,12 @@ app.MapPromocoesEndpoints();
     {
         try
         {
-            // EnsureCreated cria o schema a partir do modelo EF (sem precisar de migrations).
-            // Ao gerar migrations formais no futuro, substituir por MigrateAsync().
             await db.Database.EnsureCreatedAsync();
             if (!isTestEnv) Log.Information("✅ Schema criado/verificado (loja + biblioteca)");
         }
         catch (Exception ex)
         {
-            if (!isTestEnv) Log.Fatal(ex, "❌ Falha ao criar schema. Postgres está rodando? (Docker deve estar ativo)");
+            if (!isTestEnv) Log.Fatal(ex, "❌ Falha ao criar schema. Postgres está rodando?");
             Console.Error.WriteLine($"FATAL: Falha ao criar schema: {ex.Message}");
             throw;
         }

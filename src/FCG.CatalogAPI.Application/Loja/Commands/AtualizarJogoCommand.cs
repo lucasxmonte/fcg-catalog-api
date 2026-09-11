@@ -8,8 +8,16 @@ public record AtualizarJogoResult(Guid Id, string Titulo, decimal Preco);
 
 public class AtualizarJogoHandler
 {
+    private const string CacheKey = "catalog:jogos:ativos";
+
     private readonly ICatalogDbContext _db;
-    public AtualizarJogoHandler(ICatalogDbContext db) => _db = db;
+    private readonly ICacheService _cache;
+
+    public AtualizarJogoHandler(ICatalogDbContext db, ICacheService cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
     public async Task<AtualizarJogoResult?> HandleAsync(Guid id, AtualizarJogoCommand cmd, CancellationToken ct)
     {
@@ -18,6 +26,7 @@ public class AtualizarJogoHandler
 
         jogo.Atualizar(cmd.Titulo, cmd.Descricao, cmd.Genero, cmd.Preco);
         await _db.SaveChangesAsync(ct);
+        await _cache.RemoveAsync(CacheKey, ct);
 
         return new AtualizarJogoResult(jogo.Id, jogo.Titulo, jogo.Preco);
     }

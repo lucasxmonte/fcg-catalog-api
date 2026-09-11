@@ -5,8 +5,16 @@ namespace FCG.CatalogAPI.Application.Loja.Commands;
 
 public class AtivarJogoHandler
 {
+    private const string CacheKey = "catalog:jogos:ativos";
+
     private readonly ICatalogDbContext _db;
-    public AtivarJogoHandler(ICatalogDbContext db) => _db = db;
+    private readonly ICacheService _cache;
+
+    public AtivarJogoHandler(ICatalogDbContext db, ICacheService cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
     public async Task<bool> HandleAsync(Guid id, CancellationToken ct)
     {
@@ -15,6 +23,7 @@ public class AtivarJogoHandler
 
         jogo.Ativar();
         await _db.SaveChangesAsync(ct);
+        await _cache.RemoveAsync(CacheKey, ct);
         return true;
     }
 }

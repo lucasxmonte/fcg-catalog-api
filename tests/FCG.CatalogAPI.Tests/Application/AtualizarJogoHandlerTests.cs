@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FCG.CatalogAPI.Application.Comum.Cache;
 using FCG.CatalogAPI.Application.Loja.Commands;
 using FCG.CatalogAPI.Domain.Loja.Entidades;
 
@@ -6,6 +7,8 @@ namespace FCG.CatalogAPI.Tests.Application;
 
 public class AtualizarJogoHandlerTests
 {
+    private static readonly NullCacheService Cache = new();
+
     private static async Task<TestCatalogDbContext> DbComJogo(Jogo jogo)
     {
         var db = TestCatalogDbContext.Criar();
@@ -18,7 +21,7 @@ public class AtualizarJogoHandlerTests
     public async Task HandleAsync_IdNaoExiste_DeveRetornarNull()
     {
         using var db = TestCatalogDbContext.Criar();
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         var result = await handler.HandleAsync(
             Guid.NewGuid(),
@@ -33,7 +36,7 @@ public class AtualizarJogoHandlerTests
     {
         var jogo = Jogo.Criar("Nome Antigo", "desc antiga", "RPG", 30m);
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         var result = await handler.HandleAsync(
             jogo.Id,
@@ -54,7 +57,7 @@ public class AtualizarJogoHandlerTests
     {
         var jogo = Jogo.Criar("Nome Original", "desc", "RPG", 50m);
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         Func<Task> act = () => handler.HandleAsync(
             jogo.Id,
@@ -69,7 +72,7 @@ public class AtualizarJogoHandlerTests
     {
         var jogo = Jogo.Criar("Jogo Válido", "desc", "Ação", 49.90m);
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         Func<Task> act = () => handler.HandleAsync(
             jogo.Id,
@@ -82,10 +85,9 @@ public class AtualizarJogoHandlerTests
     [Fact]
     public async Task HandleAsync_PrecoZero_DevePermitir()
     {
-        // Preço zero é válido (jogo gratuito) — apenas negativo é rejeitado
         var jogo = Jogo.Criar("Jogo Pago", "desc", "Casual", 29.90m);
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         var result = await handler.HandleAsync(
             jogo.Id,
@@ -99,11 +101,10 @@ public class AtualizarJogoHandlerTests
     [Fact]
     public async Task HandleAsync_JogoInativo_DeveAtualizarNormalmente()
     {
-        // O handler não impede atualização de jogos inativos; isso é decisão de negócio
         var jogo = Jogo.Criar("Jogo Inativo", "desc original", "RPG", 20m);
         jogo.Desativar();
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         var result = await handler.HandleAsync(
             jogo.Id,
@@ -115,16 +116,15 @@ public class AtualizarJogoHandlerTests
 
         var jogoAtualizado = db.Jogos.Single(j => j.Id == jogo.Id);
         jogoAtualizado.Titulo.Should().Be("Jogo Reativado");
-        jogoAtualizado.Ativo.Should().BeFalse(); // ativo não muda via Atualizar
+        jogoAtualizado.Ativo.Should().BeFalse();
     }
 
     [Fact]
     public async Task HandleAsync_TituloComEspacos_DeveLancarArgumentException()
     {
-        // Título com apenas espaços (IsNullOrWhiteSpace) também deve rejeitar
         var jogo = Jogo.Criar("Título Válido", "desc", "Esporte", 15m);
         using var db = await DbComJogo(jogo);
-        var handler = new AtualizarJogoHandler(db);
+        var handler = new AtualizarJogoHandler(db, Cache);
 
         Func<Task> act = () => handler.HandleAsync(
             jogo.Id,
