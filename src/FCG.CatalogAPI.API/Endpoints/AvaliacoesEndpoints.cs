@@ -10,8 +10,7 @@ public static class AvaliacoesEndpoints
     public static void MapAvaliacoesEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/jogos/{jogoId:guid}/avaliacoes")
-            .WithTags("Avaliações")
-            .WithOpenApi();
+            .WithTags("Avaliações");
 
         // GET /api/jogos/{jogoId}/avaliacoes — Lista avaliações de um jogo (público)
         group.MapGet("/", async (
@@ -33,8 +32,11 @@ public static class AvaliacoesEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var usuarioId = Guid.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)
-                ?? throw new UnauthorizedAccessException("Usuário não identificado."));
+            var idClaim = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null)
+                return Results.Unauthorized();
+
+            var usuarioId = Guid.Parse(idClaim);
             var nomeUsuario = user.FindFirstValue(ClaimTypes.Name) ?? "Usuário";
 
             var cmd = new AvaliarJogoCommand(jogoId, usuarioId, nomeUsuario, req.Nota, req.Comentario);
@@ -50,7 +52,7 @@ public static class AvaliacoesEndpoints
         })
         .RequireAuthorization()
         .WithSummary("Avalia um jogo")
-        .WithDescription("Cria ou atualiza a avaliação do usuário autenticado para o jogo. Uma avaliação por usuário por jogo.");
+        .WithDescription("Cria ou atualiza a avaliação do usuário autenticado. Uma avaliação por usuário por jogo.");
 
         // DELETE /api/jogos/{jogoId}/avaliacoes/{id} — Remove avaliação (autenticado, própria)
         group.MapDelete("/{id}", async (
@@ -60,15 +62,19 @@ public static class AvaliacoesEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var usuarioId = Guid.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)
-                ?? throw new UnauthorizedAccessException("Usuário não identificado."));
+            var idClaim = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (idClaim is null)
+                return Results.Unauthorized();
 
+            var usuarioId = Guid.Parse(idClaim);
             var removido = await handler.HandleAsync(id, usuarioId, ct);
-            return removido ? Results.NoContent() : Results.NotFound(new ErroResponse("Avaliação não encontrada."));
+            return removido
+                ? Results.NoContent()
+                : Results.NotFound(new ErroResponse("Avaliação não encontrada."));
         })
         .RequireAuthorization()
         .WithSummary("Remove avaliação")
-        .WithDescription("Remove a avaliação do usuário autenticado. Apenas o autor pode remover sua própria avaliação.");
+        .WithDescription("Remove a avaliação do usuário autenticado. Apenas o autor pode remover.");
     }
 }
 
