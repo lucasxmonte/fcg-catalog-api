@@ -119,4 +119,5 @@ dotnet test
 
 ---
 
-> **FIAP Pós-Tech — Software Architecture | Grupo 17 | Tech Challenge**
+> **FIAP Pós-Tech — Software Architecture | Tech Challenge**
+> Lucas Monte Ferreri Castilho
