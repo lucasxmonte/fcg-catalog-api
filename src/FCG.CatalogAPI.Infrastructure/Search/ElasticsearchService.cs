@@ -41,7 +41,7 @@ public class ElasticsearchService : ISearchService
 
     public async Task RemoverJogoAsync(Guid id, CancellationToken ct = default)
     {
-        var response = await _client.DeleteAsync(IndexName, id.ToString(), ct);
+        var response = await _client.DeleteAsync<JogoDocument>(IndexName, id.ToString(), cancellationToken: ct);
 
         if (!response.IsValidResponse && response.Result != Result.NotFound)
             _logger.LogWarning("Falha ao remover jogo {Id} do índice: {Error}", id, response.ElasticsearchServerError?.Error?.Reason);
