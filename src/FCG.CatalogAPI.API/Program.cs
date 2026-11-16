@@ -1,3 +1,4 @@
+using Elastic.Clients.Elasticsearch;
 using FCG.CatalogAPI.Application.Avaliacoes;
 using FCG.CatalogAPI.Application.Biblioteca.Commands;
 using FCG.CatalogAPI.Application.Comum.Interfaces;
@@ -9,6 +10,7 @@ using FCG.CatalogAPI.Application.Comum.Cache;
 using FCG.CatalogAPI.Infrastructure.Cache;
 using FCG.CatalogAPI.Infrastructure.Mensageria;
 using FCG.CatalogAPI.Infrastructure.Persistencia;
+using FCG.CatalogAPI.Infrastructure.Search;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -20,11 +22,7 @@ using Serilog;
 using StackExchange.Redis;
 using System.Text;
 
-// Em Testing, NÃO inicializa o Serilog bootstrap logger nem o UseSerilog.
-// Motivo: xUnit executa classes de teste em paralelo; cada classe cria sua própria
-// WebApplicationFactory, que chama Program.cs novamente. O ReloadableLogger global
-// (Log.Logger) só pode ser "frozen" uma vez por processo — a segunda tentativa lança
-// InvalidOperationException: "The logger is already frozen."
+
 var isTestEnv = string.Equals(
     Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
     "Testing",
@@ -73,6 +71,20 @@ else
     builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 }
 
+// ── Elasticsearch ─────────────────────────────────────────────────
+if (useInMemory)
+{
+    builder.Services.AddSingleton<ISearchService, NullSearchService>();
+}
+else
+{
+    var esUri = builder.Configuration["Elasticsearch:Uri"] ?? "http://localhost:9200";
+    var settings = new ElasticsearchClientSettings(new Uri(esUri))
+        .DefaultIndex("jogos");
+    builder.Services.AddSingleton(new ElasticsearchClient(settings));
+    builder.Services.AddSingleton<ISearchService, ElasticsearchService>();
+}
+
 // ── MongoDB ───────────────────────────────────────────────────────
 if (!useInMemory)
 {
@@ -85,6 +97,7 @@ if (!useInMemory)
 }
 
 // ── Application Handlers ───────────────────────────────────────────
+builder.Services.AddScoped<BuscarJogosPorTermoHandler>();
 builder.Services.AddScoped<CriarJogoHandler>();
 builder.Services.AddScoped<AtualizarJogoHandler>();
 builder.Services.AddScoped<DesativarJogoHandler>();

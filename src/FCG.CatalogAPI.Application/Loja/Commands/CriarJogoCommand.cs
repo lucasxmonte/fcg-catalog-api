@@ -13,11 +13,13 @@ public class CriarJogoHandler
 
     private readonly ICatalogDbContext _db;
     private readonly ICacheService _cache;
+    private readonly ISearchService _search;
 
-    public CriarJogoHandler(ICatalogDbContext db, ICacheService cache)
+    public CriarJogoHandler(ICatalogDbContext db, ICacheService cache, ISearchService search)
     {
-        _db = db;
-        _cache = cache;
+        _db     = db;
+        _cache  = cache;
+        _search = search;
     }
 
     public async Task<CriarJogoResult> HandleAsync(CriarJogoCommand cmd, CancellationToken ct)
@@ -26,6 +28,7 @@ public class CriarJogoHandler
         _db.Jogos.Add(jogo);
         await _db.SaveChangesAsync(ct);
         await _cache.RemoveAsync(CacheKey, ct);
+        await _search.IndexarJogoAsync(jogo, ct);
         return new CriarJogoResult(jogo.Id, jogo.Titulo, jogo.Preco);
     }
 }

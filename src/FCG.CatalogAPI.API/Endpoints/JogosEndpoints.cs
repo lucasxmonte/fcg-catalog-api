@@ -1,4 +1,5 @@
 using FCG.CatalogAPI.API.Comum;
+using FCG.CatalogAPI.Application.Comum.Interfaces;
 using FCG.CatalogAPI.Application.Loja.Commands;
 using FCG.CatalogAPI.Application.Loja.Queries;
 using Microsoft.AspNetCore.Mvc;
@@ -123,6 +124,28 @@ public static class JogosEndpoints
         .Produces<ErroResponse>(401)
         .Produces<ErroResponse>(403)
         .Produces<ErroResponse>(404);
+
+        // ── Busca avançada com Elasticsearch (fuzzy + relevância) ──────────
+        group.MapGet("/search", async (
+            [FromQuery] string q,
+            BuscarJogosPorTermoHandler handler,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(q))
+                return Results.BadRequest(new ErroResponse("O parâmetro 'q' é obrigatório."));
+
+            var resultados = await handler.HandleAsync(q, ct);
+            return Results.Ok(resultados);
+        })
+        .WithName("BuscarJogosPorTermo")
+        .WithSummary("Busca avançada de jogos (Elasticsearch)")
+        .WithDescription(
+            "Realiza busca fuzzy nos campos título, descrição e gênero via Elasticsearch. " +
+            "Tolera erros de digitação e ordena por relevância.\n\n" +
+            "**Exemplo:** `GET /api/jogos/search?q=zelda`\n\n" +
+            "**400** – parâmetro 'q' ausente.")
+        .Produces<List<JogoSearchResult>>(200)
+        .Produces<ErroResponse>(400);
 
         return app;
     }

@@ -12,11 +12,13 @@ public class AtualizarJogoHandler
 
     private readonly ICatalogDbContext _db;
     private readonly ICacheService _cache;
+    private readonly ISearchService _search;
 
-    public AtualizarJogoHandler(ICatalogDbContext db, ICacheService cache)
+    public AtualizarJogoHandler(ICatalogDbContext db, ICacheService cache, ISearchService search)
     {
-        _db = db;
-        _cache = cache;
+        _db     = db;
+        _cache  = cache;
+        _search = search;
     }
 
     public async Task<AtualizarJogoResult?> HandleAsync(Guid id, AtualizarJogoCommand cmd, CancellationToken ct)
@@ -27,6 +29,7 @@ public class AtualizarJogoHandler
         jogo.Atualizar(cmd.Titulo, cmd.Descricao, cmd.Genero, cmd.Preco);
         await _db.SaveChangesAsync(ct);
         await _cache.RemoveAsync(CacheKey, ct);
+        await _search.IndexarJogoAsync(jogo, ct);
 
         return new AtualizarJogoResult(jogo.Id, jogo.Titulo, jogo.Preco);
     }
