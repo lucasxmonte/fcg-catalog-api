@@ -7,12 +7,13 @@ namespace FCG.CatalogAPI.Tests.Application;
 public class CriarJogoHandlerTests
 {
     private static readonly NullCacheService Cache = new();
+    private static readonly NullSearchService Search = new();
 
     [Fact]
     public async Task HandleAsync_ComDadosValidos_DevePersistirERetornarResult()
     {
         using var db = TestCatalogDbContext.Criar();
-        var handler = new CriarJogoHandler(db, Cache);
+        var handler = new CriarJogoHandler(db, Cache, Search);
 
         var result = await handler.HandleAsync(
             new CriarJogoCommand("Cyber Adventure", "RPG cyberpunk", "RPG", 199.90m),
@@ -31,7 +32,7 @@ public class CriarJogoHandlerTests
     public async Task HandleAsync_ComPrecoZero_DevePersistir()
     {
         using var db = TestCatalogDbContext.Criar();
-        var handler = new CriarJogoHandler(db, Cache);
+        var handler = new CriarJogoHandler(db, Cache, Search);
 
         var result = await handler.HandleAsync(
             new CriarJogoCommand("Jogo Gratuito", "desc", "Free", 0m),
@@ -44,7 +45,7 @@ public class CriarJogoHandlerTests
     public async Task HandleAsync_ComTituloVazio_DeveLancarArgumentException()
     {
         using var db = TestCatalogDbContext.Criar();
-        var handler = new CriarJogoHandler(db, Cache);
+        var handler = new CriarJogoHandler(db, Cache, Search);
 
         Func<Task> act = () => handler.HandleAsync(
             new CriarJogoCommand("", "desc", "RPG", 100m),
@@ -57,7 +58,7 @@ public class CriarJogoHandlerTests
     public async Task HandleAsync_ComPrecoNegativo_DeveLancarArgumentException()
     {
         using var db = TestCatalogDbContext.Criar();
-        var handler = new CriarJogoHandler(db, Cache);
+        var handler = new CriarJogoHandler(db, Cache, Search);
 
         Func<Task> act = () => handler.HandleAsync(
             new CriarJogoCommand("Título", "desc", "RPG", -10m),
